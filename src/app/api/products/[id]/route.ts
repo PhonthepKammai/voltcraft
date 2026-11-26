@@ -1,43 +1,21 @@
-import { NextRequest } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import {
-  deleteProduct,
-  getProductById,
-  updateProduct,
-} from '@/services/product.service';
+import { NextRequest } from "next/server";
+import { handle, ok, readJson } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { deleteProduct, getProductById, updateProduct } from "@/services/product.service";
 
-type RouteContext = { params: Promise<{ id: string }> };
+type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, context: RouteContext) {
-  try {
-    const { id } = await context.params;
-    const product = await getProductById(id);
-    return ok(product);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const GET = handle(async (_req: NextRequest, { params }: Ctx) => {
+  return ok(await getProductById((await params).id));
+});
 
-export async function PATCH(req: NextRequest, context: RouteContext) {
-  try {
-    await requireAdmin(req);
-    const { id } = await context.params;
-    const body = await req.json();
-    const updated = await updateProduct(id, body);
-    return ok(updated, 'Product updated');
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const PATCH = handle(async (req: NextRequest, { params }: Ctx) => {
+  await requireAdmin(req);
+  return ok(await updateProduct((await params).id, await readJson(req)), "แก้ไขสินค้าแล้ว");
+});
 
-export async function DELETE(req: NextRequest, context: RouteContext) {
-  try {
-    await requireAdmin(req);
-    const { id } = await context.params;
-    const deleted = await deleteProduct(id);
-    return ok(deleted, 'Product deleted');
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const DELETE = handle(async (req: NextRequest, { params }: Ctx) => {
+  await requireAdmin(req);
+  const r = await deleteProduct((await params).id);
+  return ok(r, r.archived ? "สินค้ามีประวัติการสั่งซื้อ จึงถูกเก็บเข้าคลัง (archived)" : "ลบสินค้าแล้ว");
+});

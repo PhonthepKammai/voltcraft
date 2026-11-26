@@ -1,110 +1,82 @@
-import { SignJWT, jwtVerify } from 'jose';
-import { NextRequest, NextResponse } from 'next/server';
-import { AppError } from './errors';
+import { SignJWT, jwtVerify } from "jose";
+import type { NextRequest, NextResponse } from "next/server";
+import { connectDB } from "./db";
+import { forbidden, unauthorized } from "./errors";
+import { User } from "@/models";
 
-export type UserRole = 'customer' | 'admin';
+export const AUTH_COOKIE = "voltcraft_token";
+const MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
+export type Role = "customer" | "admin";
 export interface AuthUser {
-  userId: string;
+  id: string;
+  name: string;
   email: string;
-  role: UserRole;
-  name?: string;
+  roles: Role[];
+  isAdmin: boolean;
 }
 
-export const AUTH_COOKIE_NAME = 'voltcraft_token';
-const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
-
-function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('Missing JWT_SECRET environment variable');
-  }
-  return new TextEncoder().encode(secret);
+function secret() {
+  const s = process.env.JWT_SECRET;
+  if (!s || s.length < 16) throw new Error("JWT_SECRET must be set (min 16 chars).");
+  return new TextEncoder().encode(s);
 }
 
-export async function signAuthToken(payload: AuthUser): Promise<string> {
-  return new SignJWT({
-    email: payload.email,
-    role: payload.role,
-    name: payload.name,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(payload.userId)
+export async function signToken(userId: string): Promise<string> {
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
     .setIssuedAt()
-    .setExpirationTime(`${TOKEN_TTL_SECONDS}s`)
-    .sign(getJwtSecret());
+    .setExpirationTime(`${MAX_AGE}s`)
+    .sign(secret());
 }
 
-export async function verifyAuthToken(token: string): Promise<AuthUser | null> {
+export async function verifyToken(token: string): Promise<string | null> {
   try {
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    if (!payload.sub || typeof payload.email !== 'string') {
-      return null;
-    }
-
-    const role = payload.role;
-    if (role !== 'customer' && role !== 'admin') {
-      return null;
-    }
-
-    return {
-      userId: payload.sub,
-      email: payload.email,
-      role,
-      name: typeof payload.name === 'string' ? payload.name : undefined,
-    };
+    const { payload } = await jwtVerify(token, secret());
+    return payload.sub ?? null;
   } catch {
     return null;
   }
 }
 
-export function setAuthCookie(res: NextResponse, token: string): void {
-  res.cookies.set(AUTH_COOKIE_NAME, token, {
+export function setAuthCookie(res: NextResponse, token: string) {
+  res.cookies.set(AUTH_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: TOKEN_TTL_SECONDS,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: MAX_AGE,
   });
 }
 
-export function clearAuthCookie(res: NextResponse): void {
-  res.cookies.set(AUTH_COOKIE_NAME, '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
+export function clearAuthCookie(res: NextResponse) {
+  res.cookies.set(AUTH_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
 }
 
+/** Returns the logged-in user, or null. Role is re-read from DB on every call. */
 export async function getCurrentUser(req: NextRequest): Promise<AuthUser | null> {
-  const cookieToken = req.cookies.get(AUTH_COOKIE_NAME)?.value;
-  const authHeader = req.headers.get('authorization');
-  const bearerToken = authHeader?.startsWith('Bearer ')
-    ? authHeader.slice(7).trim()
-    : undefined;
+  const token = req.cookies.get(AUTH_COOKIE)?.value;
+  if (!token) return null;
+  const userId = await verifyToken(token);
+  if (!userId) return null;
 
-  const token = cookieToken || bearerToken;
-  if (!token) {
-    return null;
-  }
+  await connectDB();
+  const u = await User.findById(userId).select("name email roles status").lean();
+  if (!u || u.status !== "active") return null;
 
-  return verifyAuthToken(token);
+  const roles = (u.roles ?? []) as Role[];
+  return { id: String(u._id), name: u.name, email: u.email, roles, isAdmin: roles.includes("admin") };
 }
 
-export async function requireAuth(req: NextRequest): Promise<AuthUser> {
+export async function requireUser(req: NextRequest): Promise<AuthUser> {
   const user = await getCurrentUser(req);
-  if (!user) {
-    throw new AppError('Authentication required', 401);
-  }
+  if (!user) throw unauthorized();
   return user;
 }
 
 export async function requireAdmin(req: NextRequest): Promise<AuthUser> {
-  const user = await requireAuth(req);
-  if (user.role !== 'admin') {
-    throw new AppError('Admin access required', 403);
-  }
+  const user = await requireUser(req);
+  if (!user.isAdmin) throw forbidden("ต้องเป็นผู้ดูแลระบบ (admin)");
   return user;
 }

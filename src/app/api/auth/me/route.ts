@@ -1,14 +1,9 @@
-import { NextRequest } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { getUserProfile } from '@/services/auth.service';
+import { NextRequest } from "next/server";
+import { handle, ok } from "@/lib/api";
+import { requireUser } from "@/lib/auth";
+import { getUserProfile } from "@/services/auth.service";
 
-export async function GET(req: NextRequest) {
-  try {
-    const authUser = await requireAuth(req);
-    const profile = await getUserProfile(authUser.userId);
-    return ok(profile);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const GET = handle(async (req: NextRequest) => {
+  const me = await requireUser(req);
+  return ok({ user: await getUserProfile(me.id) });
+});

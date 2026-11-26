@@ -5,6 +5,7 @@ const CategorySchema = new Schema(
   {
     name: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
+    image: { type: String, default: "" },
     parentId: ref("Category"), // หมวดซ้อนหมวด
     isActive: { type: Boolean, default: true },
   },

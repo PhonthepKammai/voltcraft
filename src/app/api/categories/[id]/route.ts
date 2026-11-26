@@ -1,17 +1,10 @@
-import { NextRequest } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { deleteCategory } from '@/services/taxonomy.service';
+import { NextRequest } from "next/server";
+import { handle, ok } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { deleteCategory } from "@/services/taxonomy.service";
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function DELETE(req: NextRequest, context: RouteContext) {
-  try {
-    await requireAdmin(req);
-    const { id } = await context.params;
-    const deleted = await deleteCategory(id);
-    return ok(deleted, 'Category deleted');
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const DELETE = handle(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  await requireAdmin(req);
+  await deleteCategory((await params).id);
+  return ok(undefined, "ลบข้อมูลแล้ว");
+});

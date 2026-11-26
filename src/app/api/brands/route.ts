@@ -1,24 +1,14 @@
-import { NextRequest } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { createBrand, listBrands } from '@/services/taxonomy.service';
+import { NextRequest } from "next/server";
+import { created, handle, ok, readJson } from "@/lib/api";
+import { getCurrentUser, requireAdmin } from "@/lib/auth";
+import { createBrand, listBrands } from "@/services/taxonomy.service";
 
-export async function GET() {
-  try {
-    const brands = await listBrands();
-    return ok(brands);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const GET = handle(async (req: NextRequest) => {
+  const isAdmin = (await getCurrentUser(req))?.isAdmin ?? false;
+  return ok(await listBrands({ includeInactive: isAdmin }));
+});
 
-export async function POST(req: NextRequest) {
-  try {
-    await requireAdmin(req);
-    const body = await req.json();
-    const brand = await createBrand(body);
-    return ok(brand, 'Brand created', 201);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const POST = handle(async (req: NextRequest) => {
+  await requireAdmin(req);
+  return created(await createBrand(await readJson(req)), "เพิ่มข้อมูลแล้ว");
+});

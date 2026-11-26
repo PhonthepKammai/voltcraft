@@ -1,16 +1,11 @@
-import { NextRequest } from 'next/server';
-import { setAuthCookie } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { loginUser } from '@/services/auth.service';
+import { NextRequest } from "next/server";
+import { handle, ok, readJson } from "@/lib/api";
+import { setAuthCookie, signToken } from "@/lib/auth";
+import { loginUser } from "@/services/auth.service";
 
-export async function POST(req: NextRequest) {
-  try {
-    const { email, password } = await req.json();
-    const { user, token } = await loginUser(email, password);
-    const res = ok({ user }, 'Login successful');
-    setAuthCookie(res, token);
-    return res;
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const POST = handle(async (req: NextRequest) => {
+  const user = await loginUser(await readJson(req));
+  const res = ok({ user }, "เข้าสู่ระบบสำเร็จ");
+  setAuthCookie(res, await signToken(user.id));
+  return res;
+});

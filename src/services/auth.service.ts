@@ -1,120 +1,71 @@
-import bcrypt from 'bcryptjs';
-import { connectDB } from '@/lib/db';
-import { AppError } from '@/lib/errors';
-import { signAuthToken, UserRole } from '@/lib/auth';
-import { User } from '@/models';
+import bcrypt from "bcryptjs";
+import { connectDB } from "@/lib/db";
+import { conflict, notFound, unauthorized } from "@/lib/errors";
+import { str, optStr } from "@/lib/validate";
+import { badRequest } from "@/lib/errors";
+import { User } from "@/models";
 
-export interface RegisterCustomerInput {
-  name: string;
-  email: string;
-  password: string;
-  phone?: string;
-}
+type UserLike = {
+  _id: unknown; name: string; email: string; phone?: string | null;
+  roles?: string[]; status?: string | null; addresses?: unknown[];
+};
 
-export interface SafeUserProfile {
-  _id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  phone?: string;
-  createdAt?: Date;
-}
-
-function toSafeUser(doc: {
-  _id: { toString(): string };
-  name: string;
-  email: string;
-  role: UserRole;
-  phone?: string;
-  createdAt?: Date;
-}): SafeUserProfile {
+/** Public shape. `role` (primary) is kept for the existing frontend; `roles` is the DB truth. */
+export function toPublicUser(u: UserLike) {
+  const roles = u.roles ?? ["customer"];
   return {
-    _id: doc._id.toString(),
-    name: doc.name,
-    email: doc.email,
-    role: doc.role,
-    phone: doc.phone,
-    createdAt: doc.createdAt,
+    id: String(u._id),
+    name: u.name,
+    email: u.email,
+    phone: u.phone ?? undefined,
+    role: roles.includes("admin") ? "admin" : "customer",
+    roles,
+    status: u.status ?? "active",
+    addresses: u.addresses ?? [],
   };
 }
 
-export async function registerCustomer(data: RegisterCustomerInput) {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function registerCustomer(input: { name?: unknown; email?: unknown; password?: unknown; phone?: unknown }) {
+  const name = str(input.name, "ชื่อ", { max: 100 });
+  const email = str(input.email, "อีเมล").toLowerCase();
+  const password = str(input.password, "รหัสผ่าน");
+  if (!EMAIL_RE.test(email)) throw badRequest("รูปแบบอีเมลไม่ถูกต้อง");
+  if (password.length < 8) throw badRequest("รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร");
+
   await connectDB();
+  if (await User.exists({ email })) throw conflict("อีเมลนี้ถูกใช้งานแล้ว");
 
-  const name = data.name?.trim();
-  const email = data.email?.trim().toLowerCase();
-  const password = data.password;
-
-  if (!name || !email || !password) {
-    throw new AppError('Name, email, and password are required', 400);
+  const passwordHash = await bcrypt.hash(password, 10);
+  try {
+    // roles is forced to customer — admins can never be self-registered
+    const user = await User.create({ name, email, passwordHash, phone: optStr(input.phone), roles: ["customer"] });
+    return toPublicUser(user.toObject());
+  } catch (e) {
+    if ((e as { code?: number }).code === 11000) throw conflict("อีเมลนี้ถูกใช้งานแล้ว");
+    throw e;
   }
-
-  if (password.length < 6) {
-    throw new AppError('Password must be at least 6 characters', 400);
-  }
-
-  const existing = await User.findOne({ email }).lean();
-  if (existing) {
-    throw new AppError('An account with this email already exists', 409);
-  }
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  const created = await User.create({
-    name,
-    email,
-    password: hashedPassword,
-    phone: data.phone?.trim(),
-    role: 'customer',
-  });
-
-  const user = toSafeUser(created);
-  const token = await signAuthToken({
-    userId: user._id,
-    email: user.email,
-    role: user.role,
-    name: user.name,
-  });
-
-  return { user, token };
 }
 
-export async function loginUser(email: string, password: string) {
+export async function loginUser(input: { email?: unknown; password?: unknown }) {
+  const email = str(input.email, "อีเมล").toLowerCase();
+  const password = str(input.password, "รหัสผ่าน");
+
   await connectDB();
+  const user = await User.findOne({ email }).select("+passwordHash");
+  const valid = user ? await bcrypt.compare(password, user.passwordHash) : false;
+  if (!user || !valid) throw unauthorized("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+  if (user.status !== "active") throw unauthorized("บัญชีนี้ถูกระงับการใช้งาน");
 
-  const normalizedEmail = email?.trim().toLowerCase();
-  if (!normalizedEmail || !password) {
-    throw new AppError('Email and password are required', 400);
-  }
-
-  const found = await User.findOne({ email: normalizedEmail }).select('+password');
-  if (!found) {
-    throw new AppError('Invalid email or password', 401);
-  }
-
-  const isMatch = await bcrypt.compare(password, found.password);
-  if (!isMatch) {
-    throw new AppError('Invalid email or password', 401);
-  }
-
-  const user = toSafeUser(found);
-  const token = await signAuthToken({
-    userId: user._id,
-    email: user.email,
-    role: user.role,
-    name: user.name,
-  });
-
-  return { user, token };
+  user.lastLoginAt = new Date();
+  await user.save();
+  return toPublicUser(user.toObject());
 }
 
 export async function getUserProfile(userId: string) {
   await connectDB();
-
-  const user = await User.findById(userId).select('-password').lean();
-  if (!user) {
-    throw new AppError('User not found', 404);
-  }
-
-  return user;
+  const user = await User.findById(userId).lean();
+  if (!user) throw notFound("ไม่พบผู้ใช้");
+  return toPublicUser(user);
 }

@@ -1,20 +1,13 @@
-import { handleApiError, ok } from '@/lib/errors';
-import { seedDatabase } from '@/services/seed.service';
+import { fail, handle, ok } from "@/lib/api";
+import { seedDatabase } from "@/services/seed.service";
 
-export async function GET() {
-  try {
-    const result = await seedDatabase();
-    return ok(result, 'Database seeded successfully');
-  } catch (error) {
-    return handleApiError(error);
+// DESTRUCTIVE: wipes every collection. Blocked in production unless ALLOW_SEED=true.
+const run = handle(async () => {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "true") {
+    return fail("Seeding is disabled in production", 403);
   }
-}
+  return ok(await seedDatabase(), "Seeded VoltCraft database (THB)", 201);
+});
 
-export async function POST() {
-  try {
-    const result = await seedDatabase();
-    return ok(result, 'Database seeded successfully', 201);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const POST = run;
+export const GET = run;

@@ -42,6 +42,8 @@ function VoltCraftShell() {
     document.getElementById('product-catalog')?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  console.log(brands)
+
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900">
       <Navbar

@@ -58,7 +58,7 @@ const OrderSchema = new Schema(
 
     // ข้อมูลการชำระเงิน (ยุบจาก Payment.ts เพื่อใช้กับ Stripe)
     payment: {
-      method: { type: String, default: "stripe" },
+      method: { type: String, enum: ["stripe", "cod"], default: "stripe" },
       status: { 
         type: String, 
         enum: ["unpaid", "paid", "refunded"], 

@@ -1,8 +1,8 @@
-import { clearAuthCookie } from '@/lib/auth';
-import { ok } from '@/lib/errors';
+import { handle, ok } from "@/lib/api";
+import { clearAuthCookie } from "@/lib/auth";
 
-export async function POST() {
-  const res = ok(null, 'Logged out successfully');
+export const POST = handle(async () => {
+  const res = ok(undefined, "ออกจากระบบแล้ว");
   clearAuthCookie(res);
   return res;
-}
+});

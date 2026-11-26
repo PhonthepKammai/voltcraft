@@ -1,30 +1,31 @@
-import { NextRequest } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { createProduct, listProducts } from '@/services/product.service';
+import { NextRequest } from "next/server";
+import { created, handle, ok, readJson } from "@/lib/api";
+import { getCurrentUser, requireAdmin } from "@/lib/auth";
+import { createProduct, listProducts } from "@/services/product.service";
 
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const products = await listProducts({
-      search: searchParams.get('search') ?? undefined,
-      category: searchParams.get('category') ?? undefined,
-      brand: searchParams.get('brand') ?? undefined,
-      status: searchParams.get('status') ?? undefined,
-    });
-    return ok(products);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+const numParam = (v: string | null) => (v !== null && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : undefined);
 
-export async function POST(req: NextRequest) {
-  try {
-    await requireAdmin(req);
-    const body = await req.json();
-    const product = await createProduct(body);
-    return ok(product, 'Product created', 201);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const GET = handle(async (req: NextRequest) => {
+  const p = req.nextUrl.searchParams;
+  const isAdmin = (await getCurrentUser(req))?.isAdmin ?? false;
+  const status = p.get("status");
+  const data = await listProducts({
+    q: p.get("q") ?? undefined,
+    category: p.get("category") ?? undefined,
+    brand: p.get("brand") ?? undefined,
+    minPrice: numParam(p.get("minPrice")),
+    maxPrice: numParam(p.get("maxPrice")),
+    inStock: p.get("inStock") === "true",
+    sort: p.get("sort") ?? undefined,
+    page: numParam(p.get("page")),
+    limit: numParam(p.get("limit")),
+    // only admins may see archived products
+    status: isAdmin && (status === "archived" || status === "all") ? status : "active",
+  });
+  return ok(data);
+});
+
+export const POST = handle(async (req: NextRequest) => {
+  await requireAdmin(req);
+  return created(await createProduct(await readJson(req)), "เพิ่มสินค้าแล้ว");
+});

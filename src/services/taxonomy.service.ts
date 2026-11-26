@@ -1,128 +1,76 @@
-import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
-import { AppError } from '@/lib/errors';
-import { Brand, Category, Product } from '@/models';
+import { connectDB } from "@/lib/db";
+import { badRequest, conflict, notFound } from "@/lib/errors";
+import { assertId, optStr, slugify, str } from "@/lib/validate";
+import { Brand, Category, Product } from "@/models";
 
-function toSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+function dupGuard(e: unknown, msg: string): never {
+  if ((e as { code?: number }).code === 11000) throw conflict(msg);
+  throw e;
 }
 
-export interface CreateTaxonomyInput {
-  name: string;
-  slug?: string;
-  description?: string;
-  image?: string;
-  logo?: string;
-}
-
-export async function listCategories() {
+// ---------- Categories ----------
+export async function listCategories(opts: { includeInactive?: boolean } = {}) {
   await connectDB();
-  return Category.find().sort({ name: 1 }).lean();
+  return Category.find(opts.includeInactive ? {} : { isActive: true }).sort({ name: 1 }).lean();
 }
 
-export async function createCategory(data: CreateTaxonomyInput) {
+export async function createCategory(input: { name?: unknown; slug?: unknown; parentId?: unknown }) {
+  const name = str(input.name, "ชื่อหมวดหมู่", { max: 100 });
+  const slug = optStr(input.slug)?.toLowerCase() ?? slugify(name);
+  if (!slug) throw badRequest("ไม่สามารถสร้าง slug ได้ กรุณาระบุ slug");
+
   await connectDB();
-
-  const name = data.name?.trim();
-  if (!name) {
-    throw new AppError('Category name is required', 400);
+  const parentId = input.parentId ? assertId(input.parentId, "parentId") : undefined;
+  if (parentId && !(await Category.exists({ _id: parentId }))) throw notFound("ไม่พบหมวดหมู่แม่");
+  try {
+    return (await Category.create({ name, slug, parentId })).toObject();
+  } catch (e) {
+    dupGuard(e, "slug นี้ถูกใช้แล้ว");
   }
-
-  const slug = data.slug?.trim() ? toSlug(data.slug) : toSlug(name);
-  if (!slug) {
-    throw new AppError('A valid category slug could not be generated', 400);
-  }
-
-  const exists = await Category.findOne({ slug }).lean();
-  if (exists) {
-    throw new AppError(`Category with slug "${slug}" already exists`, 409);
-  }
-
-  return Category.create({
-    name,
-    slug,
-    description: data.description?.trim(),
-    image: data.image?.trim(),
-  });
 }
 
 export async function deleteCategory(id: string) {
+  assertId(id);
   await connectDB();
-
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw new AppError('Invalid category ID', 400);
-  }
-
-  const referencedCount = await Product.countDocuments({ categoryId: id });
-  if (referencedCount > 0) {
-    throw new AppError(
-      `Cannot delete category: ${referencedCount} product(s) still reference it`,
-      400
-    );
-  }
-
-  const deleted = await Category.findByIdAndDelete(id).lean();
-  if (!deleted) {
-    throw new AppError('Category not found', 404);
-  }
-
-  return deleted;
+  if (await Product.exists({ categoryId: id })) throw conflict("ยังมีสินค้าในหมวดหมู่นี้ ลบไม่ได้");
+  if (await Category.exists({ parentId: id })) throw conflict("ยังมีหมวดหมู่ย่อย ลบไม่ได้");
+  const res = await Category.findByIdAndDelete(id);
+  if (!res) throw notFound("ไม่พบหมวดหมู่");
 }
 
-export async function listBrands() {
+// ---------- Brands ----------
+export async function listBrands(opts: { includeInactive?: boolean } = {}) {
   await connectDB();
-  return Brand.find().sort({ name: 1 }).lean();
+  return Brand.find(opts.includeInactive ? {} : { isActive: true }).sort({ sortOrder: 1, name: 1 }).lean();
 }
 
-export async function createBrand(data: CreateTaxonomyInput) {
+export async function createBrand(input: {
+  name?: unknown; slug?: unknown; logo?: unknown; description?: unknown; isFeatured?: unknown; sortOrder?: unknown;
+}) {
+  const name = str(input.name, "ชื่อแบรนด์", { max: 100 });
+  const slug = optStr(input.slug)?.toLowerCase() ?? slugify(name);
+  if (!slug) throw badRequest("ไม่สามารถสร้าง slug ได้ กรุณาระบุ slug");
+  const logo = str(input.logo, "URL โลโก้");
+
   await connectDB();
-
-  const name = data.name?.trim();
-  if (!name) {
-    throw new AppError('Brand name is required', 400);
+  try {
+    return (
+      await Brand.create({
+        name, slug, logo,
+        description: optStr(input.description),
+        isFeatured: typeof input.isFeatured === "boolean" ? input.isFeatured : undefined,
+        sortOrder: typeof input.sortOrder === "number" ? input.sortOrder : undefined,
+      })
+    ).toObject();
+  } catch (e) {
+    dupGuard(e, "ชื่อหรือ slug แบรนด์นี้ถูกใช้แล้ว");
   }
-
-  const slug = data.slug?.trim() ? toSlug(data.slug) : toSlug(name);
-  if (!slug) {
-    throw new AppError('A valid brand slug could not be generated', 400);
-  }
-
-  const exists = await Brand.findOne({ slug }).lean();
-  if (exists) {
-    throw new AppError(`Brand with slug "${slug}" already exists`, 409);
-  }
-
-  return Brand.create({
-    name,
-    slug,
-    description: data.description?.trim(),
-    logo: data.logo?.trim() ?? data.image?.trim(),
-  });
 }
 
 export async function deleteBrand(id: string) {
+  assertId(id);
   await connectDB();
-
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw new AppError('Invalid brand ID', 400);
-  }
-
-  const referencedCount = await Product.countDocuments({ brandId: id });
-  if (referencedCount > 0) {
-    throw new AppError(
-      `Cannot delete brand: ${referencedCount} product(s) still reference it`,
-      400
-    );
-  }
-
-  const deleted = await Brand.findByIdAndDelete(id).lean();
-  if (!deleted) {
-    throw new AppError('Brand not found', 404);
-  }
-
-  return deleted;
+  if (await Product.exists({ brandId: id })) throw conflict("ยังมีสินค้าของแบรนด์นี้ ลบไม่ได้");
+  const res = await Brand.findByIdAndDelete(id);
+  if (!res) throw notFound("ไม่พบแบรนด์");
 }

@@ -1,20 +1,9 @@
-import Stripe from 'stripe';
+import Stripe from "stripe";
 
-let stripeInstance: Stripe | null = null;
+const g = globalThis as unknown as { _stripe?: Stripe };
 
 export function getStripe(): Stripe {
-  if (stripeInstance) {
-    return stripeInstance;
-  }
-
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  if (!secretKey) {
-    throw new Error('Missing STRIPE_SECRET_KEY environment variable');
-  }
-
-  stripeInstance = new Stripe(secretKey, {
-    typescript: true,
-  });
-
-  return stripeInstance;
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("Missing STRIPE_SECRET_KEY environment variable.");
+  return (g._stripe ??= new Stripe(key));
 }

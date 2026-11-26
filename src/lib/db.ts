@@ -1,48 +1,21 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-interface MongooseCache {
-  conn: typeof mongoose | null;
-  promise: Promise<typeof mongoose> | null;
-}
+type Cache = { conn: typeof mongoose | null; promise: Promise<typeof mongoose> | null };
 
-declare global {
-  // eslint-disable-next-line no-var
-  var mongooseCache: MongooseCache | undefined;
-}
-
-const cached: MongooseCache = globalThis.mongooseCache ?? {
-  conn: null,
-  promise: null,
-};
-
-if (!globalThis.mongooseCache) {
-  globalThis.mongooseCache = cached;
-}
+const g = globalThis as unknown as { _mongoose?: Cache };
+const cache: Cache = (g._mongoose ??= { conn: null, promise: null });
 
 export async function connectDB(): Promise<typeof mongoose> {
-  if (cached.conn) {
-    return cached.conn;
-  }
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error("Missing MONGODB_URI environment variable.");
 
-  const mongoUri = process.env.MONGODB_URI;
-  if (!mongoUri) {
-    throw new Error('Missing MONGODB_URI environment variable');
-  }
-
-  if (!cached.promise) {
-    cached.promise = mongoose
-      .connect(mongoUri, {
-        bufferCommands: false,
-      })
-      .then((instance) => instance);
-  }
-
+  if (cache.conn) return cache.conn;
+  cache.promise ??= mongoose.connect(uri, { bufferCommands: false });
   try {
-    cached.conn = await cached.promise;
-  } catch (error) {
-    cached.promise = null;
-    throw error;
+    cache.conn = await cache.promise;
+  } catch (e) {
+    cache.promise = null; // allow retry on next request
+    throw e;
   }
-
-  return cached.conn;
+  return cache.conn;
 }

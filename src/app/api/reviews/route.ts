@@ -1,15 +1,9 @@
-import { NextRequest } from 'next/server';
-import { requireAuth } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { createReview } from '@/services/review.service';
+import { NextRequest } from "next/server";
+import { created, handle, readJson } from "@/lib/api";
+import { requireUser } from "@/lib/auth";
+import { createReview } from "@/services/review.service";
 
-export async function POST(req: NextRequest) {
-  try {
-    const user = await requireAuth(req);
-    const body = await req.json();
-    const review = await createReview(user.userId, body);
-    return ok(review, 'Review submitted', 201);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const POST = handle(async (req: NextRequest) => {
+  const user = await requireUser(req);
+  return created(await createReview(user.id, await readJson(req)), "ขอบคุณสำหรับรีวิว");
+});

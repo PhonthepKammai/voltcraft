@@ -1,145 +1,83 @@
-import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
-import { AppError } from '@/lib/errors';
-import { Order, ORDER_STATUS, Product, Review } from '@/models';
+import { Types } from "mongoose";
+import { connectDB } from "@/lib/db";
+import { badRequest, conflict, forbidden, notFound } from "@/lib/errors";
+import { assertId, num, optStr } from "@/lib/validate";
+import { Order, Product, Review } from "@/models";
 
-export interface CreateReviewPayload {
-  productId: string;
-  orderId: string;
-  rating: number;
-  comment: string;
-}
-
-export interface ModerateReviewPayload {
-  status?: 'published' | 'hidden';
-  replyText?: string;
-}
-
-async function recalculateProductRating(productId: mongoose.Types.ObjectId | string) {
-  const objectId =
-    typeof productId === 'string' ? new mongoose.Types.ObjectId(productId) : productId;
-
-  const [stats] = await Review.aggregate([
-    { $match: { productId: objectId, status: 'published' } },
-    {
-      $group: {
-        _id: '$productId',
-        ratingAvg: { $avg: '$rating' },
-        ratingCount: { $sum: 1 },
-      },
-    },
+/** Recompute ratingAvg / ratingCount from published reviews only. */
+export async function recalcProductRating(productId: string) {
+  const [agg] = await Review.aggregate([
+    { $match: { productId: new Types.ObjectId(productId), status: "published" } },
+    { $group: { _id: null, avg: { $avg: "$rating" }, count: { $sum: 1 } } },
   ]);
-
   await Product.updateOne(
-    { _id: objectId },
-    {
-      $set: {
-        ratingAvg: stats ? Number(stats.ratingAvg.toFixed(2)) : 0,
-        ratingCount: stats ? stats.ratingCount : 0,
-      },
-    }
+    { _id: productId },
+    { ratingAvg: agg ? Math.round(agg.avg * 10) / 10 : 0, ratingCount: agg?.count ?? 0 }
   );
 }
 
-export async function createReview(userId: string, payload: CreateReviewPayload) {
+export async function createReview(
+  userId: string,
+  input: { orderId?: unknown; productId?: unknown; rating?: unknown; comment?: unknown; images?: unknown }
+) {
+  const orderId = assertId(input.orderId, "orderId");
+  const productId = assertId(input.productId, "productId");
+  const rating = num(input.rating, "คะแนน", { int: true, min: 1 });
+  if (rating > 5) throw badRequest("คะแนนต้องอยู่ระหว่าง 1-5");
+  const comment = optStr(input.comment);
+  if (comment && comment.length > 2000) throw badRequest("ความเห็นยาวเกิน 2000 ตัวอักษร");
+  const images = (Array.isArray(input.images) ? input.images : [])
+    .filter((u): u is string => typeof u === "string" && !!u.trim())
+    .map((url) => ({ url }));
+  if (images.length > 5) throw badRequest("แนบรูปได้ไม่เกิน 5 รูป");
+
   await connectDB();
+  const order = await Order.findById(orderId).lean();
+  if (!order || String(order.customerId) !== userId) throw notFound("ไม่พบออเดอร์");
+  if (order.status !== "delivered") throw forbidden("รีวิวได้เฉพาะออเดอร์ที่จัดส่งสำเร็จแล้ว");
+  if (!order.items.some((i) => String(i.productId) === productId)) throw badRequest("สินค้านี้ไม่ได้อยู่ในออเดอร์");
 
-  const { productId, orderId, rating, comment } = payload;
-
-  if (
-    !mongoose.Types.ObjectId.isValid(productId) ||
-    !mongoose.Types.ObjectId.isValid(orderId)
-  ) {
-    throw new AppError('Valid productId and orderId are required', 400);
+  try {
+    const review = await Review.create({ productId, customerId: userId, orderId, rating, comment, images, status: "published" });
+    await recalcProductRating(productId);
+    return review.toObject();
+  } catch (e) {
+    if ((e as { code?: number }).code === 11000) throw conflict("คุณรีวิวสินค้านี้ในออเดอร์นี้แล้ว");
+    throw e;
   }
-
-  if (typeof rating !== 'number' || rating < 1 || rating > 5) {
-    throw new AppError('Rating must be a number between 1 and 5', 400);
-  }
-
-  if (!comment?.trim()) {
-    throw new AppError('Review comment is required', 400);
-  }
-
-  const order = await Order.findOne({ _id: orderId, userId }).lean();
-  if (!order) {
-    throw new AppError('Order not found for this user', 404);
-  }
-
-  const deliveredStatus = ORDER_STATUS.DELIVERED ?? 'delivered';
-  if (order.status !== deliveredStatus) {
-    throw new AppError('You can only review products from delivered orders', 400);
-  }
-
-  const orderedProduct = (order.items as Array<{ productId: mongoose.Types.ObjectId }>).some(
-    (item) => item.productId.toString() === productId
-  );
-  if (!orderedProduct) {
-    throw new AppError('This product was not part of the specified order', 400);
-  }
-
-  const duplicate = await Review.exists({ userId, productId, orderId });
-  if (duplicate) {
-    throw new AppError('You have already reviewed this product for this order', 409);
-  }
-
-  const review = await Review.create({
-    userId,
-    productId,
-    orderId,
-    rating,
-    comment: comment.trim(),
-    status: 'published',
-  });
-
-  await recalculateProductRating(productId);
-
-  return review;
 }
 
+/** Admin: reply (empty string clears it) and/or hide/unhide. */
 export async function moderateReview(
   reviewId: string,
-  payload: ModerateReviewPayload
+  adminId: string,
+  input: { reply?: unknown; hidden?: unknown }
 ) {
+  assertId(reviewId, "reviewId");
+  const set: Record<string, unknown> = {};
+  const unset: Record<string, 1> = {};
+
+  if (input.reply !== undefined) {
+    if (typeof input.reply !== "string") throw badRequest("reply ต้องเป็นข้อความ");
+    const text = input.reply.trim();
+    if (text.length > 2000) throw badRequest("คำตอบยาวเกิน 2000 ตัวอักษร");
+    if (text) set.reply = { text, by: adminId, at: new Date() };
+    else unset.reply = 1;
+  }
+  if (input.hidden !== undefined) {
+    if (typeof input.hidden !== "boolean") throw badRequest("hidden ต้องเป็น true/false");
+    set.status = input.hidden ? "hidden" : "published";
+  }
+  if (!Object.keys(set).length && !Object.keys(unset).length) throw badRequest("ไม่มีข้อมูลสำหรับแก้ไข");
+
   await connectDB();
+  const review = await Review.findByIdAndUpdate(
+    reviewId,
+    { ...(Object.keys(set).length && { $set: set }), ...(Object.keys(unset).length && { $unset: unset }) },
+    { new: true }
+  ).lean();
+  if (!review) throw notFound("ไม่พบรีวิว");
 
-  if (!mongoose.Types.ObjectId.isValid(reviewId)) {
-    throw new AppError('Invalid review ID', 400);
-  }
-
-  const review = await Review.findById(reviewId);
-  if (!review) {
-    throw new AppError('Review not found', 404);
-  }
-
-  let statusChanged = false;
-
-  if (payload.status !== undefined) {
-    if (payload.status !== 'published' && payload.status !== 'hidden') {
-      throw new AppError('Review status must be "published" or "hidden"', 400);
-    }
-    if (review.status !== payload.status) {
-      review.status = payload.status;
-      statusChanged = true;
-    }
-  }
-
-  if (payload.replyText !== undefined) {
-    const trimmed = payload.replyText.trim();
-    if (!trimmed) {
-      throw new AppError('Reply text cannot be empty', 400);
-    }
-    review.reply = {
-      text: trimmed,
-      at: new Date(),
-    };
-  }
-
-  await review.save();
-
-  if (statusChanged) {
-    await recalculateProductRating(review.productId);
-  }
-
-  return review.toObject();
+  if (set.status) await recalcProductRating(String(review.productId));
+  return review;
 }

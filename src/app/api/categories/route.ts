@@ -1,24 +1,14 @@
-import { NextRequest } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { createCategory, listCategories } from '@/services/taxonomy.service';
+import { NextRequest } from "next/server";
+import { created, handle, ok, readJson } from "@/lib/api";
+import { getCurrentUser, requireAdmin } from "@/lib/auth";
+import { createCategory, listCategories } from "@/services/taxonomy.service";
 
-export async function GET() {
-  try {
-    const categories = await listCategories();
-    return ok(categories);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const GET = handle(async (req: NextRequest) => {
+  const isAdmin = (await getCurrentUser(req))?.isAdmin ?? false;
+  return ok(await listCategories({ includeInactive: isAdmin }));
+});
 
-export async function POST(req: NextRequest) {
-  try {
-    await requireAdmin(req);
-    const body = await req.json();
-    const category = await createCategory(body);
-    return ok(category, 'Category created', 201);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+export const POST = handle(async (req: NextRequest) => {
+  await requireAdmin(req);
+  return created(await createCategory(await readJson(req)), "เพิ่มข้อมูลแล้ว");
+});

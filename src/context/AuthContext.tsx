@@ -2,8 +2,9 @@
 
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { AppView, User } from '@/types/voltcraft';
-import { DEMO_USERS } from '@/lib/initialData';
 import { useToast } from '@/context/ToastContext';
+
+import { api } from '@/lib/apiClient';
 
 interface RegisterPayload {
   name: string;
@@ -26,7 +27,6 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { showToast } = useToast();
-  const [registeredUsers, setRegisteredUsers] = useState(DEMO_USERS);
   const [user, setUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<AppView>('storefront');
 
@@ -44,71 +44,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user, showToast]
   );
 
-  const login = useCallback(
-    async (email: string, password: string): Promise<boolean> => {
-      const matched = registeredUsers.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-      );
+  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
+    try {
+      const { user } = await api<{ user: User }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      })
+      setUser(user);
+      showToast(`Hello, ${user.name}!`, 'success');
+      setActiveView(user.role === 'admin' ? 'admin' : 'storefront');
+      return true
+    } catch (e) {
+      showToast((e as Error).message, 'error');
+      return false
+    }
+  }, [showToast]);
 
-      if (!matched) {
-        showToast('Invalid email or password. Try demo credentials below.', 'error');
-        return false;
-      }
+  const register = useCallback(async (payload: RegisterPayload): Promise<boolean> => {
+    try {
+      const { user } = await api<{ user: User }>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
 
-      const { password: _removed, ...safeUser } = matched;
-      setUser(safeUser);
-      showToast(`Welcome back, ${safeUser.name}!`, 'success');
-      setActiveView(safeUser.role === 'admin' ? 'admin' : 'storefront');
-      return true;
-    },
-    [registeredUsers, showToast]
-  );
-
-  const register = useCallback(
-    async (payload: RegisterPayload): Promise<boolean> => {
-      const exists = registeredUsers.some(
-        (u) => u.email.toLowerCase() === payload.email.toLowerCase()
-      );
-      if (exists) {
-        showToast('An account with this email already exists.', 'error');
-        return false;
-      }
-
-      const newUserWithPassword = {
-        _id: `usr-${Date.now()}`,
-        name: payload.name,
-        email: payload.email,
-        phone: payload.phone,
-        password: payload.password,
-        role: 'customer' as const,
-        addresses: [
-          {
-            recipient: payload.name,
-            phone: payload.phone,
-            line1: '123 Rama IX Rd.',
-            subdistrict: 'Huai Khwang',
-            district: 'Huai Khwang',
-            province: 'Bangkok',
-            postalCode: '10310',
-          },
-        ],
-      };
-
-      setRegisteredUsers((prev) => [...prev, newUserWithPassword]);
-      const { password: _removed, ...safeUser } = newUserWithPassword;
-      setUser(safeUser);
-      showToast('Account created successfully. Welcome to VoltCraft!', 'success');
+      setUser(user)
+      showToast("Accout created successfully, Welcome!", 'success');
       setActiveView('storefront');
       return true;
-    },
-    [registeredUsers, showToast]
-  );
+    } catch (e) {
+      showToast((e as Error).message, 'error');
+      return false;
+    }
+  }, [showToast]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await api('api/auth/logout', {method: 'POST'});
     setUser(null);
     setActiveView('storefront');
-    showToast('You have been signed out.', 'info');
-  }, [showToast]);
+  }, []);
 
   return (
     <AuthContext.Provider

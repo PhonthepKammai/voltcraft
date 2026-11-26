@@ -1,18 +1,10 @@
-import { NextRequest } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
-import { handleApiError, ok } from '@/lib/errors';
-import { moderateReview } from '@/services/review.service';
+import { NextRequest } from "next/server";
+import { handle, ok, readJson } from "@/lib/api";
+import { requireAdmin } from "@/lib/auth";
+import { moderateReview } from "@/services/review.service";
 
-type RouteContext = { params: Promise<{ id: string }> };
-
-export async function PATCH(req: NextRequest, context: RouteContext) {
-  try {
-    await requireAdmin(req);
-    const { id } = await context.params;
-    const body = await req.json();
-    const review = await moderateReview(id, body);
-    return ok(review, 'Review updated');
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+/** Body: { reply?: string ('' clears), hidden?: boolean } */
+export const PATCH = handle(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  const admin = await requireAdmin(req);
+  return ok(await moderateReview((await params).id, admin.id, await readJson(req)));
+});

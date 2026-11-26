@@ -1,146 +1,75 @@
-import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
-import { AppError } from '@/lib/errors';
-import { Cart, Product } from '@/models';
+import { connectDB } from "@/lib/db";
+import { badRequest, conflict, notFound } from "@/lib/errors";
+import { assertId, num } from "@/lib/validate";
+import { Cart, Product } from "@/models";
+import { getEffectivePrice } from "./product.service";
 
-interface PopulatedProduct {
-  _id: mongoose.Types.ObjectId;
-  name: string;
-  slug: string;
-  price: number;
-  salePrice?: number | null;
-  stock: number;
-  images?: string[];
-  status: string;
-}
+/** Cart with live product data + prices. Items whose product vanished/archived are dropped from the view. */
+export async function getCart(userId: string) {
+  await connectDB();
+  const cart = await Cart.findOne({ customerId: userId })
+    .populate({ path: "items.productId", select: "sku name slug images price sale stock status" })
+    .lean();
 
-function formatCartResponse(cart: {
-  _id: mongoose.Types.ObjectId;
-  userId: mongoose.Types.ObjectId;
-  items: Array<{ productId: PopulatedProduct | null; quantity: number }>;
-}) {
-  const activeItems = cart.items
-    .filter((item) => item.productId && item.productId.status === 'active')
-    .map((item) => {
-      const product = item.productId as PopulatedProduct;
-      const unitPrice = product.salePrice ?? product.price;
-      const lineTotal = unitPrice * item.quantity;
-      return {
-        productId: product._id,
-        product,
-        quantity: item.quantity,
-        unitPrice,
-        lineTotal,
-      };
-    });
-
-  const subtotal = activeItems.reduce((sum, item) => sum + item.lineTotal, 0);
-  const itemCount = activeItems.reduce((sum, item) => sum + item.quantity, 0);
+  const items = (cart?.items ?? []).flatMap((it) => {
+    const p = it.productId as unknown as
+      | { _id: unknown; sku: string; name: string; slug: string; images: string[]; price: number; sale?: never; stock: number; status: string }
+      | null;
+    if (!p || p.status !== "active") return [];
+    const unitPrice = getEffectivePrice(p);
+    return [{
+      productId: String(p._id),
+      product: { id: String(p._id), sku: p.sku, name: p.name, slug: p.slug, image: p.images?.[0], price: p.price, stock: p.stock },
+      quantity: it.quantity,
+      unitPrice,
+      lineTotal: Math.round(unitPrice * it.quantity * 100) / 100,
+      stockWarning: it.quantity > p.stock,
+    }];
+  });
 
   return {
-    _id: cart._id,
-    userId: cart.userId,
-    items: activeItems,
-    itemCount,
-    subtotal,
-    currency: 'THB',
+    items,
+    itemCount: items.reduce((n, i) => n + i.quantity, 0),
+    subtotal: Math.round(items.reduce((s, i) => s + i.lineTotal, 0) * 100) / 100,
   };
 }
 
-export async function getCart(userId: string) {
+/** Sets the quantity of a line (absolute, not additive). quantity <= 0 removes the line. */
+export async function upsertCartItem(userId: string, productIdRaw: unknown, quantityRaw: unknown) {
+  const productId = assertId(productIdRaw, "productId");
+  const quantity = num(quantityRaw, "จำนวน", { int: true });
+  if (quantity <= 0) return removeCartItem(userId, productId);
+  if (quantity > 99) throw badRequest("สั่งได้สูงสุด 99 ชิ้นต่อรายการ");
+
   await connectDB();
+  const product = await Product.findById(productId).select("status stock name").lean();
+  if (!product || product.status !== "active") throw notFound("ไม่พบสินค้า");
+  if (product.stock < quantity) throw conflict(`สินค้า "${product.name}" เหลือในสต็อก ${product.stock} ชิ้น`);
 
-  let cart = await Cart.findOne({ userId }).populate({
-    path: 'items.productId',
-    match: { status: 'active' },
-    select: 'name slug sku price salePrice stock images status',
-  });
-
-  if (!cart) {
-    cart = await Cart.create({ userId, items: [] });
-  }
-
-  return formatCartResponse(cart.toObject() as unknown as Parameters<typeof formatCartResponse>[0]);
-}
-
-export async function upsertCartItem(
-  userId: string,
-  productId: string,
-  quantity: number
-) {
-  await connectDB();
-
-  if (!mongoose.Types.ObjectId.isValid(productId)) {
-    throw new AppError('Invalid product ID', 400);
-  }
-
-  if (typeof quantity !== 'number' || !Number.isInteger(quantity)) {
-    throw new AppError('Quantity must be an integer', 400);
-  }
-
-  if (quantity <= 0) {
-    return removeCartItem(userId, productId);
-  }
-
-  const product = await Product.findById(productId).lean();
-  if (!product || product.status !== 'active') {
-    throw new AppError('Product is unavailable', 404);
-  }
-
-  if (quantity > product.stock) {
-    throw new AppError(
-      `Requested quantity (${quantity}) exceeds available stock (${product.stock})`,
-      400
+  // update the existing line, or push a new one — two steps so we never create duplicate lines
+  const updated = await Cart.updateOne(
+    { customerId: userId, "items.productId": productId },
+    { $set: { "items.$.quantity": quantity } }
+  );
+  if (updated.matchedCount === 0) {
+    await Cart.updateOne(
+      { customerId: userId },
+      { $push: { items: { productId, quantity } }, $setOnInsert: { customerId: userId } },
+      { upsert: true }
     );
   }
-
-  let cart = await Cart.findOne({ userId });
-  if (!cart) {
-    cart = await Cart.create({
-      userId,
-      items: [{ productId, quantity }],
-    });
-  } else {
-    const existingIndex = cart.items.findIndex(
-      (item: { productId: mongoose.Types.ObjectId }) =>
-        item.productId.toString() === productId
-    );
-
-    if (existingIndex >= 0) {
-      cart.items[existingIndex].quantity = quantity;
-    } else {
-      cart.items.push({ productId: new mongoose.Types.ObjectId(productId), quantity });
-    }
-
-    await cart.save();
-  }
-
   return getCart(userId);
 }
 
-export async function removeCartItem(userId: string, productId: string) {
+export async function removeCartItem(userId: string, productIdRaw: unknown) {
+  const productId = assertId(productIdRaw, "productId");
   await connectDB();
-
-  if (!mongoose.Types.ObjectId.isValid(productId)) {
-    throw new AppError('Invalid product ID', 400);
-  }
-
-  await Cart.updateOne(
-    { userId },
-    { $pull: { items: { productId: new mongoose.Types.ObjectId(productId) } } }
-  );
-
+  await Cart.updateOne({ customerId: userId }, { $pull: { items: { productId } } });
   return getCart(userId);
 }
 
 export async function clearCart(userId: string) {
   await connectDB();
-
-  await Cart.findOneAndUpdate(
-    { userId },
-    { $set: { items: [] } },
-    { upsert: true }
-  );
-
+  await Cart.updateOne({ customerId: userId }, { $set: { items: [] } });
   return getCart(userId);
 }
