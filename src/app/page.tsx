@@ -16,6 +16,7 @@ import { CartDrawer } from '@/components/cart/CartDrawer';
 import { AuthView } from '@/components/auth/AuthView';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { ProfileLayout } from '@/components/profile/ProfileLayout';
+import { CustomerOrdersLayout } from '@/components/storefront/CustomerOrdersLayout';
 
 function VoltCraftShell() {
   const { activeView } = useAuth();
@@ -23,7 +24,6 @@ function VoltCraftShell() {
     products,
     categories,
     brands,
-    reviews,
     selectedProduct,
     setSelectedProduct,
     cart,
@@ -39,7 +39,11 @@ function VoltCraftShell() {
     return <AdminLayout />;
   }
 
-    if (activeView === 'profile') {
+    if (activeView === 'orders') {
+    return <CustomerOrdersLayout />;
+  }
+
+  if (activeView === 'profile') {
     return <ProfileLayout />;
   }
 
@@ -85,7 +89,6 @@ function VoltCraftShell() {
 
       <ProductDetailModal
         product={selectedProduct}
-        reviews={reviews}
         onClose={() => setSelectedProduct(null)}
         onAddToCart={(product, qty) => cart.addToCart(product, qty)}
       />

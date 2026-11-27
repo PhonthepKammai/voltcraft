@@ -44,8 +44,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-       if (view === 'profile' && !user) {
-        showToast('Please log in to view your profile.', 'error');
+       if (view === 'profile' || view === 'orders' && !user) {
+        showToast(`Please log in to view your ${view}.`, 'error');
         setActiveView('auth');
         return;
       }

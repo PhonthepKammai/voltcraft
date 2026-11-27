@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db";
 import { badRequest, conflict, notFound } from "@/lib/errors";
 import { assertId, escapeRegex, num, optStr, slugify, str } from "@/lib/validate";
 import { Brand, Cart, Category, Order, Product } from "@/models";
+import { ensureDefaultBrand, ensureDefaultCategory } from "./taxonomy.service";
 
 // ---------- pricing ----------
 type SaleLike = { isActive?: boolean | null; type?: string | null; value?: number | null; startsAt?: Date | null; expiresAt?: Date | null };
@@ -173,9 +174,18 @@ export async function createProduct(input: ProductInput) {
   if (!data.slug) throw badRequest("ไม่สามารถสร้าง slug ได้ กรุณาระบุ slug");
 
   await connectDB();
+  const categoryId = input.categoryId
+  ? assertId(input.categoryId, "categoryId")
+  : (await ensureDefaultCategory())._id;
+const brandId = input.brandId
+  ? assertId(input.brandId, "brandId")
+  : (await ensureDefaultBrand())._id;
+
   await assertRefs(data.categoryId, data.brandId);
   try {
-    return withPrice((await Product.create(data)).toObject());
+    const created = await Product.create(data);
+    await created.populate(POPULATE);
+    return withPrice(created.toObject());
   } catch (e) {
     return dup(e);
   }
@@ -199,9 +209,23 @@ export async function updateProduct(id: string, input: ProductInput) {
   if (!Object.keys(patch).length) throw badRequest("ไม่มีข้อมูลสำหรับแก้ไข");
 
   await connectDB();
+  if (input.categoryId !== undefined) {
+    patch.categoryId = input.categoryId
+      ? assertId(input.categoryId, "categoryId")
+      : (await ensureDefaultCategory())._id;
+  }
+  if (input.brandId !== undefined) {
+    patch.brandId = input.brandId
+      ? assertId(input.brandId, "brandId")
+      : (await ensureDefaultBrand())._id;
+  }
   await assertRefs(patch.categoryId as string | undefined, patch.brandId as string | undefined);
   try {
-    const p = await Product.findByIdAndUpdate(id, { $set: patch }, { new: true, runValidators: true }).populate(POPULATE).lean();
+    const p = await Product.findByIdAndUpdate(
+      id,
+      { $set: patch },
+      { returnDocument: "after", runValidators: true }
+    ).populate(POPULATE).lean();
     if (!p) throw notFound("ไม่พบสินค้า");
     return withPrice(p);
   } catch (e) {

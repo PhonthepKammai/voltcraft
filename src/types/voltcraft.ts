@@ -28,12 +28,16 @@ export interface Category {
   _id: string;
   name: string;
   slug: string;
+  image?: string;
+  isActive?: boolean;
 }
 
 export interface Brand {
   _id: string;
   name: string;
   slug: string;
+  logo?: string;
+  isActive?: boolean;
 }
 
 export type ProductStatus = 'active' | 'archived';
@@ -66,13 +70,31 @@ export interface Cart {
 }
 
 export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'delivered' | 'cancelled';
+export type PaymentMethod = 'stripe' | 'cod';
 export type PaymentStatus = 'unpaid' | 'paid' | 'refunded';
+
+export interface OrderCustomer {
+  _id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface OrderShippingAddress {
+  recipient: string;
+  phone: string;
+  line1: string;
+  subdistrict?: string;
+  district?: string;
+  province?: string;
+  postalCode?: string;
+}
 
 export interface OrderItem {
   productId: string;
-  sku: string;
+  sku?: string;
   name: string;
-  image: string;
+  image?: string;
   unitPrice: number; // THB
   quantity: number;
   lineTotal: number; // THB
@@ -81,27 +103,30 @@ export interface OrderItem {
 export interface Order {
   _id: string;
   orderNo: string;
-  customerName: string;
+  customerId?: string | OrderCustomer;
+  customerName?: string; // เผื่อข้อมูลเก่า/mock
   items: OrderItem[];
-  shippingAddress: Address;
+  shippingAddress: OrderShippingAddress;
   subtotal: number; // THB
   shippingFee: number; // THB
   total: number; // THB
   status: OrderStatus;
   payment: {
-    method: 'stripe';
+    method: PaymentMethod;
     status: PaymentStatus;
+    stripeSessionId?: string;
     paidAt?: string;
   };
-  shipment: {
+  shipment?: {
     carrier?: string;
     trackingNo?: string;
     shippedAt?: string;
     deliveredAt?: string;
   };
+  note?: string;
   createdAt: string;
+  updatedAt?: string;
 }
-
 export type ReviewStatus = 'published' | 'hidden';
 
 export interface Review {
@@ -128,7 +153,7 @@ export interface ToastItem {
   type: ToastType;
 }
 
-export type AppView = 'storefront' | 'auth' | 'admin' | 'profile';
+export type AppView = 'storefront' | 'auth' | 'admin' | 'profile' | 'orders';
 export type AdminTab = 'overview' | 'users' | 'products' | 'orders' | 'taxonomy' | 'reviews';
 
 export interface ProductFormInput {

@@ -11,6 +11,7 @@ import {
   ChevronDown,
   X,
   User,
+  Package,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -136,17 +137,29 @@ export function Navbar({ searchQuery, onSearchChange }: NavbarProps) {
                       </button>
                     )}
 
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        navigateTo('orders');
+                      }}
+                      className="mt-1 flex h-11 w-full items-center gap-2.5 rounded-xl bg-amber-50 px-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+                    >
+                      <Package className="h-4 w-4" />
+                      <span>Orders</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
                         setMenuOpen(false);
                         navigateTo('profile');
-                        console.log(navigateTo('profile'))
                       }}
                       className="mt-1 flex h-11 w-full items-center gap-2.5 rounded-xl bg-amber-50 px-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
                     >
                       <User className="h-4 w-4" />
-                      <span>profile</span>
+                      <span>Profile</span>
                     </button>
 
                     <button

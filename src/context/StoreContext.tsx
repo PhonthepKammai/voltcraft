@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Brand, Category, Order, Product, Review } from '@/types/voltcraft';
 import { useCartState } from '@/hooks/useCart';
 import { useAdminActions } from '@/hooks/useAdminActions';
@@ -12,20 +12,33 @@ interface StoreContextValue {
   products: Product[];
   categories: Category[];
   brands: Brand[];
+  activeCategories: Category[];
+  activeBrands: Brand[];
   orders: Order[];
   reviews: Review[];
   isLoading: boolean;
-  refreshStore: () => void;
+  refreshStore: () => Promise<void>;
   selectedProduct: Product | null;
   setSelectedProduct: (product: Product | null) => void;
   isCartOpen: boolean;
   setIsCartOpen: (open: boolean) => void;
   cart: ReturnType<typeof useCartState>;
   adminActions: ReturnType<typeof useAdminActions>;
-  checkoutWithCod: () => void;
+  checkoutWithCod: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
+
+type CategoriesRes = Category[] | { categories?: Category[]; items?: Category[] };
+type BrandsRes = Brand[] | { brands?: Brand[]; items?: Brand[] };
+
+function unwrapList<T>(res: T[] | { items?: T[]; [key: string]: unknown }, key: string): T[] {
+  if (Array.isArray(res)) return res;
+  const byKey = res?.[key];
+  if (Array.isArray(byKey)) return byKey as T[];
+  if (Array.isArray(res?.items)) return res.items;
+  return [];
+}
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { user, navigateTo } = useAuth();
@@ -41,27 +54,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
- 
+  const isAdmin = user?.role === 'admin';
 
   const refreshStore = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [ prodRes, catRes, brandRes ] = await Promise.all([
-        api<{ items: Product[]}>('/api/products?limit=100'),
-        api<Category[]>('/api/categories'),
-        api<Brand[]>('/api/brands'),
-      ])
+      const productUrl = isAdmin
+        ? '/api/products?limit=100&status=all'
+        : '/api/products?limit=100';
+      const categoryUrl = isAdmin
+        ? '/api/categories?includeInactive=true'
+        : '/api/categories';
+      const brandUrl = isAdmin
+        ? '/api/brands?includeInactive=true'
+        : '/api/brands';
+
+      const [prodRes, catRes, brandRes] = await Promise.all([
+        api<{ items: Product[] }>(productUrl, { credentials: 'include' }),
+        api<CategoriesRes>(categoryUrl, { credentials: 'include' }),
+        api<BrandsRes>(brandUrl, { credentials: 'include' }),
+      ]);
 
       setProducts(prodRes.items ?? []);
-      setCategories(catRes ?? []);
-      setBrands(brandRes ?? []);
+      setCategories(unwrapList<Category>(catRes, 'categories'));
+      setBrands(unwrapList<Brand>(brandRes, 'brands'));
     } catch (e) {
       console.error('Failed to load store data:', e);
       showToast('โหลดข้อมูลร้านค้าไม่สำเร็จ', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [showToast])
+  }, [isAdmin, showToast]);
 
   useEffect(() => {
     refreshStore();
@@ -72,10 +95,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setOrders([]);
       return;
     }
-    api<{ items: Order[] }>('/api/orders')
-      .then((res) => setOrders(res.items ?? []))
+    api<Order[] | { items?: Order[]; orders?: Order[] }>('/api/orders', {
+      credentials: 'include',
+    })
+      .then((res) => setOrders(unwrapList<Order>(res, 'orders')))
       .catch((e) => console.error('Failed to load orders:', e));
   }, [user]);
+
+  // รายการที่เปิดใช้งานอยู่ (สำหรับหน้าร้านค้าและ Dropdown เลือกตอนสร้างสินค้าใหม่)
+  const activeCategories = useMemo(
+    () => categories.filter((c) => c.isActive !== false),
+    [categories]
+  );
+
+  const activeBrands = useMemo(
+    () => brands.filter((b) => b.isActive !== false),
+    [brands]
+  );
 
   const cart = useCartState();
   const adminActions = useAdminActions({
@@ -89,7 +125,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   });
 
   const checkoutWithCod = useCallback(async () => {
-    if(cart.items.length === 0) {
+    if (cart.items.length === 0) {
       showToast('ไม่มีสินค้าในตะกร้า', 'error');
       return;
     }
@@ -101,15 +137,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const shippingAddress =
+      user.addresses?.find((a) => a.isDefault) ?? user.addresses?.[0];
+
+    if (!shippingAddress) {
+      setIsCartOpen(false);
+      navigateTo('profile');
+      showToast('กรุณาเพิ่มที่อยู่จัดส่งในหน้าโปรไฟล์ก่อนสั่งซื้อ', 'error');
+      return;
+    }
+
     try {
       const { order } = await api<{ order: Order }>('/api/orders', {
         method: 'POST',
+        credentials: 'include',
         body: JSON.stringify({
           items: cart.items.map((i) => ({
             productId: i.product._id,
             quantity: i.quantity,
           })),
-          shippingAddress: user.addresses[0],
+          shippingAddress,
           paymentMethod: 'cod',
         }),
       });
@@ -130,6 +177,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         products,
         categories,
         brands,
+        activeCategories,
+        activeBrands,
         orders,
         reviews,
         isLoading,

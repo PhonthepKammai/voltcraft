@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useAdminUsers, type AdminUserItem } from '@/hooks/seAdminUsers';
+import { useAdminUsers, type AdminUserItem } from '@/hooks/useAdminUsers';
 
 interface AdminUsersTabProps {
   currentUserId?: string;

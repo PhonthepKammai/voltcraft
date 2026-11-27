@@ -1,8 +1,10 @@
 'use client';
 
 import React, { FormEvent, useEffect, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Brand, Category, Product, ProductFormInput, ProductStatus } from '@/types/voltcraft';
+import { ProductImageManager } from './ui/ProductImageManager';
+import { AttributeRow, ProductAttributesEditor } from './ui/ProductAttributesEditor';
 
 interface ProductFormModalProps {
   isOpen: boolean;
@@ -10,13 +12,13 @@ interface ProductFormModalProps {
   categories: Category[];
   brands: Brand[];
   onClose: () => void;
-  onSave: (input: ProductFormInput) => boolean;
+  onSave: (input: ProductFormInput) => boolean | Promise<boolean>;
 }
 
-interface AttributeRow {
-  key: string;
-  value: string;
-}
+const DEFAULT_ATTRS: AttributeRow[] = [
+  { key: 'กำลังไฟ', value: '' },
+  { key: 'รับประกัน', value: '' },
+];
 
 export function ProductFormModal({
   isOpen,
@@ -35,25 +37,27 @@ export function ProductFormModal({
   const [salePrice, setSalePrice] = useState('');
   const [stock, setStock] = useState('10');
   const [status, setStatus] = useState<ProductStatus>('active');
-  const [imageUrl, setImageUrl] = useState('');
-  const [attrRows, setAttrRows] = useState<AttributeRow[]>([
-    { key: 'กำลังไฟ', value: '' },
-  ]);
+  const [images, setImages] = useState<string[]>([]);
+  const [attrRows, setAttrRows] = useState<AttributeRow[]>(DEFAULT_ATTRS);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
+
     if (editingProduct) {
       setSku(editingProduct.sku);
       setName(editingProduct.name);
       setDescription(editingProduct.description);
-      setCategoryId(editingProduct.category._id);
-      setBrandId(editingProduct.brand._id);
+      setCategoryId(editingProduct.category?._id ?? '');
+      setBrandId(editingProduct.brand?._id ?? '');
       setPrice(String(editingProduct.price));
       setSalePrice(editingProduct.salePrice ? String(editingProduct.salePrice) : '');
       setStock(String(editingProduct.stock));
       setStatus(editingProduct.status);
-      setImageUrl(editingProduct.images[0] ?? '');
-      const entries = Object.entries(editingProduct.attributes);
+      setImages(Array.isArray(editingProduct.images) ? editingProduct.images : []);
+
+      const entries = Object.entries(editingProduct.attributes ?? {});
       setAttrRows(
         entries.length > 0
           ? entries.map(([key, value]) => ({ key, value }))
@@ -69,32 +73,17 @@ export function ProductFormModal({
       setSalePrice('');
       setStock('10');
       setStatus('active');
-      setImageUrl('');
-      setAttrRows([
-        { key: 'กำลังไฟ', value: '' },
-        { key: 'รับประกัน', value: '' },
-      ]);
+      setImages([]);
+      setAttrRows(DEFAULT_ATTRS);
     }
   }, [isOpen, editingProduct, categories, brands]);
 
   if (!isOpen) return null;
 
-  const handleAddAttrRow = () => {
-    setAttrRows((prev) => [...prev, { key: '', value: '' }]);
-  };
-
-  const handleUpdateAttr = (idx: number, field: 'key' | 'value', val: string) => {
-    setAttrRows((prev) =>
-      prev.map((row, i) => (i === idx ? { ...row, [field]: val } : row))
-    );
-  };
-
-  const handleRemoveAttr = (idx: number) => {
-    setAttrRows((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (isUploadingImages || saving) return;
+
     const attributes: Record<string, string> = {};
     attrRows.forEach((row) => {
       if (row.key.trim() && row.value.trim()) {
@@ -102,28 +91,32 @@ export function ProductFormModal({
       }
     });
 
-    const ok = onSave({
-      _id: editingProduct?._id,
-      sku,
-      name,
-      description,
-      categoryId,
-      brandId,
-      price: Number(price) || 0,
-      salePrice: salePrice ? Number(salePrice) : undefined,
-      images: imageUrl.trim() ? [imageUrl.trim()] : [],
-      attributes,
-      status,
-      stock: Number(stock) || 0,
-    });
-
-    if (ok) onClose();
+    try {
+      setSaving(true);
+      const ok = await onSave({
+        _id: editingProduct?._id,
+        sku,
+        name,
+        description,
+        categoryId,
+        brandId,
+        price: Number(price) || 0,
+        salePrice: salePrice ? Number(salePrice) : undefined,
+        images,
+        attributes,
+        status,
+        stock: Number(stock) || 0,
+      });
+      if (ok) onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-zinc-900/45 p-4 backdrop-blur-[2px]">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-zinc-200 bg-white shadow-2xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-100 bg-white px-6 py-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-100 bg-white px-6 py-4">
           <h3 className="text-base font-bold text-zinc-900">
             {editingProduct ? 'Edit Appliance' : 'Add New Appliance'}
           </h3>
@@ -152,9 +145,7 @@ export function ProductFormModal({
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">
-                Status
-              </label>
+              <label className="mb-1 block text-xs font-semibold text-zinc-700">Status</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as ProductStatus)}
@@ -182,9 +173,7 @@ export function ProductFormModal({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">
-                Category
-              </label>
+              <label className="mb-1 block text-xs font-semibold text-zinc-700">Category</label>
               <select
                 required
                 value={categoryId}
@@ -200,9 +189,7 @@ export function ProductFormModal({
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-semibold text-zinc-700">
-                Brand
-              </label>
+              <label className="mb-1 block text-xs font-semibold text-zinc-700">Brand</label>
               <select
                 required
                 value={brandId}
@@ -262,18 +249,15 @@ export function ProductFormModal({
             </div>
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-zinc-700">
-              Image URL
-            </label>
-            <input
-              type="url"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="https://images.unsplash.com/..."
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-900 focus:border-amber-500 focus:bg-white focus:outline-none"
-            />
-          </div>
+          {/* ส่วนจัดการรูปภาพ + ลากสลับลำดับ */}
+          <ProductImageManager
+            key={editingProduct?._id ?? 'new-product'}
+            images={images}
+            onChange={setImages}
+            scope="products"
+            maxImages={10}
+            onUploadingChange={setIsUploadingImages}
+          />
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-zinc-700">
@@ -288,51 +272,8 @@ export function ProductFormModal({
             />
           </div>
 
-          {/* Dynamic Attributes */}
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
-            <div className="mb-2.5 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wide text-zinc-700">
-                Specification Attributes
-              </span>
-              <button
-                type="button"
-                onClick={handleAddAttrRow}
-                className="inline-flex items-center gap-1 rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add Row</span>
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {attrRows.map((row, idx) => (
-                <div key={idx} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={row.key}
-                    onChange={(e) => handleUpdateAttr(idx, 'key', e.target.value)}
-                    placeholder="Key (e.g. กำลังไฟ)"
-                    className="h-10 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-xs text-zinc-900 focus:border-amber-500 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={row.value}
-                    onChange={(e) => handleUpdateAttr(idx, 'value', e.target.value)}
-                    placeholder="Value (e.g. 1500W)"
-                    className="h-10 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-xs text-zinc-900 focus:border-amber-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttr(idx)}
-                    aria-label="Remove attribute row"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-400 hover:text-rose-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* ส่วนจัดการสเปกสินค้า */}
+          <ProductAttributesEditor rows={attrRows} onChange={setAttrRows} />
 
           <div className="flex justify-end gap-2.5 pt-2">
             <button
@@ -344,9 +285,16 @@ export function ProductFormModal({
             </button>
             <button
               type="submit"
-              className="h-11 rounded-xl bg-amber-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-amber-600"
+              disabled={isUploadingImages || saving}
+              className="h-11 rounded-xl bg-amber-500 px-6 text-sm font-semibold text-white shadow-sm hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {editingProduct ? 'Save Changes' : 'Create Product'}
+              {isUploadingImages
+                ? 'Uploading...'
+                : saving
+                  ? 'Saving...'
+                  : editingProduct
+                    ? 'Save Changes'
+                    : 'Create Product'}
             </button>
           </div>
         </form>

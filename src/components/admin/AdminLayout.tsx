@@ -27,7 +27,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'products', label: 'Products', icon: <Package className="h-4 w-4" /> },
   { id: 'orders', label: 'Orders', icon: <ShoppingBag className="h-4 w-4" /> },
   { id: 'taxonomy', label: 'Categories & Brands', icon: <Layers className="h-4 w-4" /> },
-  { id: 'reviews', label: 'Reviews', icon: <MessageSquare className="h-4 w-4" /> },
+  //{ id: 'reviews', label: 'Reviews', icon: <MessageSquare className="h-4 w-4" /> },
 ];
 
 export function AdminLayout() {

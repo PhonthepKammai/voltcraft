@@ -1,38 +1,38 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, Star, ShoppingCart, MessageSquare, CheckCircle2 } from 'lucide-react';
-import { Product, Review } from '@/types/voltcraft';
+import React, { useEffect, useState } from 'react';
+import { X, Star, ShoppingCart } from 'lucide-react';
+import { Product } from '@/types/voltcraft';
 import {
-  formatDateTH,
   formatTHB,
   getDiscountPercent,
   getEffectivePrice,
 } from '@/lib/format';
 import { Badge } from '@/components/ui/Badge';
+import { ProductReviews } from '@/components/storefront/ProductReviews';
 
 interface ProductDetailModalProps {
   product: Product | null;
-  reviews: Review[];
   onClose: () => void;
   onAddToCart: (product: Product, qty: number) => void;
 }
 
 export function ProductDetailModal({
   product,
-  reviews,
   onClose,
   onAddToCart,
 }: ProductDetailModalProps) {
   const [activeImageIdx, setActiveImageIdx] = useState(0);
 
+  // reset รูปเมื่อเปลี่ยนสินค้า
+  useEffect(() => {
+    setActiveImageIdx(0);
+  }, [product?._id]);
+
   if (!product) return null;
 
   const effectivePrice = getEffectivePrice(product.price, product.salePrice);
   const discount = getDiscountPercent(product.price, product.salePrice);
-  const publishedReviews = reviews.filter(
-    (r) => r.productId === product._id && r.status === 'published'
-  );
   const outOfStock = product.stock <= 0;
 
   return (
@@ -59,11 +59,11 @@ export function ProductDetailModal({
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {/* Image Gallery */}
             <div>
-              <div className="aspect-[4/3] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50">
+              <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 p-4">
                 <img
                   src={product.images[activeImageIdx] ?? product.images[0]}
                   alt={product.name}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                 />
               </div>
               {product.images.length > 1 && (
@@ -157,61 +157,9 @@ export function ProductDetailModal({
             </div>
           </div>
 
-          {/* Customer ReviewList */}
+          {/* Reviews — แยก component */}
           <div className="mt-8">
-            <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-zinc-900">
-                <MessageSquare className="h-4 w-4 text-amber-600" />
-                <span>Customer Reviews ({publishedReviews.length})</span>
-              </h3>
-            </div>
-
-            {publishedReviews.length === 0 ? (
-              <p className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-500">
-                No customer reviews published for this appliance yet.
-              </p>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {publishedReviews.map((review) => (
-                  <div
-                    key={review._id}
-                    className="rounded-2xl border border-zinc-200 bg-white p-4"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-zinc-900">
-                          {review.customerName}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-amber-600">
-                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                          {review.rating}/5
-                        </span>
-                      </div>
-                      <span className="text-xs text-zinc-400">
-                        {formatDateTH(review.createdAt)}
-                      </span>
-                    </div>
-
-                    <p className="mt-2 text-sm text-zinc-700">{review.comment}</p>
-
-                    {review.reply && (
-                      <div className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3">
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          <span>VoltCraft Official Reply</span>
-                          <span className="font-normal text-amber-600">
-                            • {formatDateTH(review.reply.at)}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-zinc-700">
-                          {review.reply.text}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            <ProductReviews productId={product._id} limit={20} />
           </div>
         </div>
       </div>

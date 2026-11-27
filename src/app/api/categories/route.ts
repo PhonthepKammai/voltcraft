@@ -1,14 +1,19 @@
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { created, handle, ok, readJson } from "@/lib/api";
-import { getCurrentUser, requireAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { createCategory, listCategories } from "@/services/taxonomy.service";
 
+export const dynamic = "force-dynamic";
+
 export const GET = handle(async (req: NextRequest) => {
-  const isAdmin = (await getCurrentUser(req))?.isAdmin ?? false;
-  return ok(await listCategories({ includeInactive: isAdmin }));
+  const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "true";
+  const categories = await listCategories({ includeInactive });
+  return ok({ categories });
 });
 
 export const POST = handle(async (req: NextRequest) => {
   await requireAdmin(req);
-  return created(await createCategory(await readJson(req)), "เพิ่มข้อมูลแล้ว");
+  const body = await readJson(req);
+  const category = await createCategory(body);
+  return created({ category }, "เพิ่มหมวดหมู่เรียบร้อยแล้ว");
 });

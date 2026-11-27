@@ -24,12 +24,12 @@ export function ProductCard({ product, onSelect, onAddToCart }: ProductCardProps
       <button
         type="button"
         onClick={() => onSelect(product)}
-        className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-100 text-left"
+        className="relative aspect-[4/3] w-full p-4 overflow-hidden bg-white text-left"
       >
         <img
           src={product.images[0]}
           alt={product.name}
-          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          className="h-full w-full object-contain transition duration-300 group-hover:scale-105"
         />
         <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
           {discount && <Badge variant="amber">-{discount}%</Badge>}
