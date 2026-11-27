@@ -15,6 +15,7 @@ import { ProductDetailModal } from '@/components/storefront/ProductDetailModal';
 import { CartDrawer } from '@/components/cart/CartDrawer';
 import { AuthView } from '@/components/auth/AuthView';
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { ProfileLayout } from '@/components/profile/ProfileLayout';
 
 function VoltCraftShell() {
   const { activeView } = useAuth();
@@ -38,11 +39,13 @@ function VoltCraftShell() {
     return <AdminLayout />;
   }
 
+    if (activeView === 'profile') {
+    return <ProfileLayout />;
+  }
+
   const scrollToCatalog = () => {
     document.getElementById('product-catalog')?.scrollIntoView({ behavior: 'smooth' });
   };
-
-  console.log(brands)
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900">

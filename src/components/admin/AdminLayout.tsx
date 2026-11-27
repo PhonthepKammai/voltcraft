@@ -9,6 +9,7 @@ import {
   Layers,
   MessageSquare,
   Zap,
+  User,
 } from 'lucide-react';
 import { AdminTab } from '@/types/voltcraft';
 import { useAuth } from '@/context/AuthContext';
@@ -18,9 +19,11 @@ import { AdminProductsTab } from '@/components/admin/AdminProductsTab';
 import { AdminOrdersTab } from '@/components/admin/AdminOrdersTab';
 import { AdminTaxonomyTab } from '@/components/admin/AdminTaxonomyTab';
 import { AdminReviewsTab } from '@/components/admin/AdminReviewsTab';
+import AdminUsersTab from './AdminUsersTab';
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
+  { id: 'users', label: 'Users', icon: <User className="h-4 w-4" /> },
   { id: 'products', label: 'Products', icon: <Package className="h-4 w-4" /> },
   { id: 'orders', label: 'Orders', icon: <ShoppingBag className="h-4 w-4" /> },
   { id: 'taxonomy', label: 'Categories & Brands', icon: <Layers className="h-4 w-4" /> },
@@ -127,6 +130,7 @@ export function AdminLayout() {
         {/* Active Panel */}
         <main className="min-w-0 flex-1">
           {activeTab === 'overview' && <AdminOverviewTab />}
+          {activeTab === 'users' && <AdminUsersTab />}
           {activeTab === 'products' && <AdminProductsTab />}
           {activeTab === 'orders' && <AdminOrdersTab />}
           {activeTab === 'taxonomy' && <AdminTaxonomyTab />}

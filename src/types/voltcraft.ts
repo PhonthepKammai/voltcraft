@@ -1,6 +1,8 @@
 export type UserRole = 'customer' | 'admin';
 
 export interface Address {
+  _id?: string;
+  label: string
   recipient: string;
   phone: string;
   line1: string;
@@ -8,6 +10,7 @@ export interface Address {
   district: string;
   province: string;
   postalCode: string;
+  isDefault: boolean;
 }
 
 export interface User {
@@ -16,7 +19,9 @@ export interface User {
   email: string;
   phone: string;
   role: UserRole;
+  status: string;
   addresses: Address[];
+  createdAt: Date;
 }
 
 export interface Category {
@@ -123,8 +128,8 @@ export interface ToastItem {
   type: ToastType;
 }
 
-export type AppView = 'storefront' | 'auth' | 'admin';
-export type AdminTab = 'overview' | 'products' | 'orders' | 'taxonomy' | 'reviews';
+export type AppView = 'storefront' | 'auth' | 'admin' | 'profile';
+export type AdminTab = 'overview' | 'users' | 'products' | 'orders' | 'taxonomy' | 'reviews';
 
 export interface ProductFormInput {
   _id?: string;

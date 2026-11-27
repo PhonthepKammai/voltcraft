@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { AppView, User } from '@/types/voltcraft';
 import { useToast } from '@/context/ToastContext';
 
@@ -17,10 +17,13 @@ interface AuthContextValue {
   user: User | null;
   isAuthenticated: boolean;
   activeView: AppView;
+  isLoading: boolean;
   navigateTo: (view: AppView) => void;
   login: (email: string, password: string) => Promise<boolean>;
   register: (payload: RegisterPayload) => Promise<boolean>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
+  updateUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -29,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { showToast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<AppView>('storefront');
+  const [isLoading, setIsLoading] = useState(true);
 
   const navigateTo = useCallback(
     (view: AppView) => {
@@ -38,6 +42,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setActiveView('storefront');
           return;
         }
+      }
+
+       if (view === 'profile' && !user) {
+        showToast('Please log in to view your profile.', 'error');
+        setActiveView('auth');
+        return;
       }
       setActiveView(view);
     },
@@ -83,16 +93,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setActiveView('storefront');
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      // ปรับ path ให้ตรงกับไฟล์ route GET ของคุณ เช่น /api/auth/me
+      const { user } = await api<{ user: User }>('/api/auth/me');
+      setUser(user);
+    } catch {
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshUser();
+  }, [refreshUser]);
+
+  const updateUser = useCallback((updatedUser: User) => {
+    setUser(updatedUser);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated: Boolean(user),
         activeView,
+        isLoading,
         navigateTo,
         login,
         register,
         logout,
+        refreshUser,
+        updateUser
       }}
     >
       {children}
