@@ -8,7 +8,7 @@ import { formatTHB } from '@/lib/format';
 import { CartItemRow } from '@/components/cart/CartItemRow';
 
 export function CartDrawer() {
-  const { isCartOpen, setIsCartOpen, cart, checkoutWithStripe } = useStore();
+  const { isCartOpen, setIsCartOpen, cart, checkoutWithCod } = useStore();
   const { user } = useAuth();
 
   if (!isCartOpen) return null;
@@ -108,7 +108,7 @@ export function CartDrawer() {
 
             <button
               type="button"
-              onClick={checkoutWithStripe}
+              onClick={checkoutWithCod}
               className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600"
             >
               <CreditCard className="h-4 w-4" />
