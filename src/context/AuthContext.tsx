@@ -44,11 +44,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-       if (view === 'profile' || view === 'orders' && !user) {
+      // ✅ ต้องวงเล็บให้ชัด: (profile หรือ orders) และยังไม่ล็อกอิน
+      if ((view === 'profile' || view === 'orders') && !user) {
         showToast(`Please log in to view your ${view}.`, 'error');
         setActiveView('auth');
         return;
       }
+
       setActiveView(view);
     },
     [user, showToast]
