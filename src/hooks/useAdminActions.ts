@@ -9,6 +9,8 @@ import {
   Product,
   ProductFormInput,
   Review,
+  UpdateBrandInput,
+  UpdateCategoryInput,
 } from '@/types/voltcraft';
 import { api } from '@/lib/apiClient';
 import { slugify } from '@/lib/format';
@@ -179,7 +181,11 @@ export function useAdminActions({
   
   // --- Categories & Brands (เชื่อม DB จริง + รองรับ Disable / Delete) ---
   const addCategory = useCallback(
-    async (input: { name: string; image?: string }) => {
+    async (input: {
+    name: string;
+    image?: string;
+    parentId?: string | null;
+  }) => {
       const trimmed = input.name.trim();
       if (!trimmed) {
         showToast('กรุณากรอกชื่อหมวดหมู่', 'error');
@@ -414,6 +420,49 @@ export function useAdminActions({
     [setReviews, showToast]
   );
 
+  const updateCategory = useCallback(
+  async (categoryId: string, payload: UpdateCategoryInput): Promise<boolean> => {
+    try {
+      const { category } = await api<{ category: Category }>(
+        `/api/categories/${categoryId}`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        }
+      );
+      setCategories((prev) =>
+        prev.map((c) => (c._id === categoryId ? category : c))
+      );
+      showToast(`บันทึกการแก้ไขหมวดหมู่ "${category.name}" แล้ว`, 'success');
+      return true;
+    } catch (err) {
+      showToast(errMsg(err, 'แก้ไขหมวดหมู่ไม่สำเร็จ'), 'error');
+      return false;
+    }
+  },
+  [setCategories, showToast]
+);
+
+const updateBrand = useCallback(
+  async (brandId: string, payload: UpdateBrandInput): Promise<boolean> => {
+    try {
+      const { brand } = await api<{ brand: Brand }>(`/api/brands/${brandId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      setBrands((prev) => prev.map((b) => (b._id === brandId ? brand : b)));
+      showToast(`บันทึกการแก้ไขแบรนด์ "${brand.name}" แล้ว`, 'success');
+      return true;
+    } catch (err) {
+      showToast(errMsg(err, 'แก้ไขแบรนด์ไม่สำเร็จ'), 'error');
+      return false;
+    }
+  },
+  [setBrands, showToast]
+);
+
   return {
     saveProduct,
     updateProductStock,
@@ -427,5 +476,7 @@ export function useAdminActions({
     updateOrderShipment,
     replyToReview,
     toggleReviewStatus,
+    updateCategory,
+    updateBrand,
   };
 }

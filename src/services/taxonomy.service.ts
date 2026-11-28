@@ -235,3 +235,145 @@ export async function deleteOrDisableBrand(id: string) {
   await Brand.findByIdAndDelete(id);
   return { deleted: true, disabled: false, usedCount: 0 };
 }
+
+export async function updateCategory(
+  id: string,
+  input: {
+    name?: unknown;
+    image?: unknown;
+    parentId?: unknown;
+    isActive?: unknown;
+  }
+) {
+  assertId(id);
+  await connectDB();
+
+  const existing = await Category.findById(id).lean();
+  if (!existing) throw notFound("ไม่พบหมวดหมู่");
+
+  const isSystem = existing.slug === DEFAULT_CATEGORY_SLUG;
+  const set: Record<string, unknown> = {};
+  const unset: Record<string, 1> = {};
+
+  if (input.name !== undefined) {
+    if (isSystem) throw badRequest("ไม่สามารถเปลี่ยนชื่อหมวดหมู่เริ่มต้นของระบบได้");
+    set.name = str(input.name, "ชื่อหมวดหมู่", { max: 100 });
+  }
+
+  if (input.image !== undefined) {
+    if (typeof input.image !== "string") throw badRequest("URL รูปภาพไม่ถูกต้อง");
+    set.image = input.image.trim();
+  }
+
+  if (input.parentId !== undefined) {
+    if (isSystem) throw badRequest("ไม่สามารถกำหนดหมวดแม่ให้หมวดหมู่เริ่มต้นของระบบได้");
+    const rawParent = optStr(input.parentId);
+    if (!rawParent) {
+      unset.parentId = 1;
+    } else {
+      const parentId = assertId(rawParent, "parentId");
+      if (parentId === id) throw badRequest("ไม่สามารถเลือกหมวดหมู่ตัวเองเป็นหมวดแม่ได้");
+      const parent = await Category.findById(parentId).select("slug parentId").lean();
+      if (!parent) throw notFound("ไม่พบหมวดหมู่หลักที่เลือก");
+      if (parent.slug === DEFAULT_CATEGORY_SLUG) {
+        throw badRequest("ไม่สามารถย้ายไปอยู่ภายใต้หมวดหมู่เริ่มต้นของระบบได้");
+      }
+      if (parent.parentId && String(parent.parentId) === id) {
+        throw badRequest("ไม่สามารถย้ายซ้อนวนกลับไปยังหมวดลูกของตัวเองได้");
+      }
+      set.parentId = parentId;
+    }
+  }
+
+  if (input.isActive !== undefined) {
+    if (typeof input.isActive !== "boolean") {
+      throw badRequest("isActive ต้องเป็น true หรือ false");
+    }
+    if (isSystem && !input.isActive) {
+      throw badRequest("ไม่สามารถปิดใช้งานหมวดหมู่เริ่มต้นของระบบได้");
+    }
+    set.isActive = input.isActive;
+  }
+
+  if (!Object.keys(set).length && !Object.keys(unset).length) {
+    throw badRequest("ไม่มีข้อมูลสำหรับแก้ไข");
+  }
+
+  try {
+    const updated = await Category.findByIdAndUpdate(
+      id,
+      {
+        ...(Object.keys(set).length && { $set: set }),
+        ...(Object.keys(unset).length && { $unset: unset }),
+      },
+      { returnDocument: "after", runValidators: true }
+    ).lean();
+
+    if (!updated) throw notFound("ไม่พบหมวดหมู่");
+    return {
+      ...serialize(updated as { _id: unknown }),
+      parentId: updated.parentId ? String(updated.parentId) : null,
+    };
+  } catch (e) {
+    return dup("ชื่อหมวดหมู่นี้มีอยู่แล้ว")(e);
+  }
+}
+
+export async function updateBrand(
+  id: string,
+  input: {
+    name?: unknown;
+    logo?: unknown;
+    description?: unknown;
+    isActive?: unknown;
+  }
+) {
+  assertId(id);
+  await connectDB();
+
+  const existing = await Brand.findById(id).lean();
+  if (!existing) throw notFound("ไม่พบแบรนด์");
+
+  const isSystem = existing.slug === DEFAULT_BRAND_SLUG;
+  const set: Record<string, unknown> = {};
+
+  if (input.name !== undefined) {
+    if (isSystem) throw badRequest("ไม่สามารถเปลี่ยนชื่อแบรนด์เริ่มต้นของระบบได้");
+    set.name = str(input.name, "ชื่อแบรนด์", { max: 100 });
+  }
+
+  if (input.logo !== undefined) {
+    if (isSystem) throw badRequest("ไม่สามารถเปลี่ยนโลโก้แบรนด์เริ่มต้นของระบบได้");
+    set.logo = str(input.logo, "โลโก้แบรนด์", { max: 2048 });
+  }
+
+  if (input.description !== undefined) {
+    set.description = optStr(input.description) ?? "";
+  }
+
+  if (input.isActive !== undefined) {
+    if (typeof input.isActive !== "boolean") {
+      throw badRequest("isActive ต้องเป็น true หรือ false");
+    }
+    if (isSystem && !input.isActive) {
+      throw badRequest("ไม่สามารถปิดใช้งานแบรนด์เริ่มต้นของระบบได้");
+    }
+    set.isActive = input.isActive;
+  }
+
+  if (!Object.keys(set).length) {
+    throw badRequest("ไม่มีข้อมูลสำหรับแก้ไข");
+  }
+
+  try {
+    const updated = await Brand.findByIdAndUpdate(
+      id,
+      { $set: set },
+      { returnDocument: "after", runValidators: true }
+    ).lean();
+    if (!updated) throw notFound("ไม่พบแบรนด์");
+    return serialize(updated as { _id: unknown });
+  } catch (e) {
+    return dup("ชื่อแบรนด์นี้มีอยู่แล้ว")(e);
+  }
+}

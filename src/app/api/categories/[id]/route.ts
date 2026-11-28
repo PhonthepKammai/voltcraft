@@ -1,10 +1,9 @@
 import type { NextRequest } from "next/server";
 import { handle, ok, readJson } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
-import { badRequest } from "@/lib/errors";
 import {
   deleteOrDisableCategory,
-  setCategoryActive,
+  updateCategory,
 } from "@/services/taxonomy.service";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -12,15 +11,9 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = handle(async (req: NextRequest, ctx: Ctx) => {
   await requireAdmin(req);
   const { id } = await ctx.params;
-  const body = await readJson<{ isActive?: unknown }>(req);
-  if (typeof body.isActive !== "boolean") {
-    throw badRequest("กรุณาระบุ isActive (true/false)");
-  }
-  const category = await setCategoryActive(id, body.isActive);
-  return ok(
-    { category },
-    body.isActive ? "เปิดใช้งานหมวดหมู่เรียบร้อยแล้ว" : "ปิดใช้งานหมวดหมู่เรียบร้อยแล้ว"
-  );
+  const body = await readJson(req);
+  const category = await updateCategory(id, body);
+  return ok({ category }, "อัปเดตหมวดหมู่เรียบร้อยแล้ว");
 });
 
 export const DELETE = handle(async (req: NextRequest, ctx: Ctx) => {

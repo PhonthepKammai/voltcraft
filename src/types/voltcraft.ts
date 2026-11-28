@@ -24,11 +24,14 @@ export interface User {
   createdAt: Date;
 }
 
+
+// -------- Category and Brand --------
 export interface Category {
   _id: string;
   name: string;
   slug: string;
   image?: string;
+  parentId?: string | null;
   isActive?: boolean;
 }
 
@@ -37,6 +40,20 @@ export interface Brand {
   name: string;
   slug: string;
   logo?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateCategoryInput {
+  name?: string;
+  image?: string;
+  parentId?: string | null;
+  isActive?: boolean;
+}
+
+export interface UpdateBrandInput {
+  name?: string;
+  logo?: string;
+  description?: string;
   isActive?: boolean;
 }
 
